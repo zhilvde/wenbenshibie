@@ -1,446 +1,349 @@
-"""Web Text Analyzer — JetBrains New UI Style"""
+"""Web 文本分析系统 — JetBrains 风格 · 中文界面"""
+from __future__ import annotations
+
 import json
-import streamlit as st
-import pandas as pd
 from collections import Counter
+
+import pandas as pd
+import streamlit as st
 from streamlit_echarts import st_pyecharts
-from utils import (
-    fetch_page, cut_words, get_text_stats,
-    extract_html_tables, create_chart,
-    counter_to_csv, export_html_report,
+
+from core import (
+    fetch_page,
+    cut_words, get_text_stats,
     extract_keywords_tfidf, extract_keywords_textrank,
-    get_pos_distribution, get_ngrams,
-    compare_counters, create_comparison_chart, create_cooccurrence_graph,
-    save_analysis, get_history, delete_history,
+    get_pos_distribution, get_ngrams, compare_counters,
+    extract_html_tables,
+    create_chart, create_comparison_chart, create_cooccurrence_graph,
 )
+from storage import save as save_history, load as load_history, remove as remove_history
+from storage import counter_to_csv, html_report as build_html_report
 
 # ================================================================
-#  Page Config
+#  页面配置
 # ================================================================
 st.set_page_config(
-    page_title="Web Text Analyzer",
+    page_title="Web 文本分析",
     page_icon="W",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 # ================================================================
-#  JetBrains New UI — CSS
+#  CSS — JetBrains New UI 风格
 # ================================================================
 st.markdown("""
 <style>
-/* ---- Global ---- */
-.stApp {
-    background: #1e1f22;
-}
+.stApp { background: #1e1f22; }
 h1, h2, h3, h4, h5, h6, p, span, div, label, li {
     color: #ced0d6;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
                  "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
 }
-h2 { font-size: 1.15rem; font-weight: 600; color: #a8adbd; margin: 0 0 12px; }
-h3 { font-size: 1rem; font-weight: 600; color: #a8adbd; margin: 0 0 8px; }
-h4 { font-size: 0.92rem; font-weight: 600; color: #9b9da4; }
-small, .caption { color: #7a7e87 !important; }
+h2 { font-size: 1.1rem; font-weight: 600; color: #a8adbd; margin: 0 0 10px; }
+h3 { font-size: 0.95rem; font-weight: 600; color: #a8adbd; }
+h4 { font-size: 0.88rem; font-weight: 600; color: #9b9da4; }
 
-/* ---- Sidebar ---- */
 [data-testid="stSidebar"] {
     background: #2b2d30;
     border-right: 1px solid #393b40;
 }
-[data-testid="stSidebar"] label {
-    color: #a8adbd !important;
-    font-size: 0.82rem;
-    font-weight: 500;
-}
-[data-testid="stSidebar"] .stSlider p {
-    color: #7a7e87;
-    font-size: 0.78rem;
-}
-[data-testid="stSidebar"] hr {
-    border-color: #393b40;
-    margin: 16px 0;
-}
+[data-testid="stSidebar"] label { color: #a8adbd !important; font-size: 0.8rem; font-weight: 500; }
+[data-testid="stSidebar"] hr { border-color: #393b40; margin: 14px 0; }
+[data-testid="stSidebar"] .stSlider p { color: #7a7e87; font-size: 0.76rem; }
 
-/* ---- Input ---- */
 .stTextInput > div > div > input {
     border-radius: 4px !important;
     border: 1px solid #393b40 !important;
     padding: 7px 12px !important;
-    font-size: 0.88rem !important;
+    font-size: 0.86rem !important;
     background: #2b2d30 !important;
     color: #ced0d6 !important;
-    font-family: "JetBrains Mono", "Cascadia Code", "Fira Code", "Consolas",
-                 "Microsoft YaHei", monospace !important;
+    font-family: "JetBrains Mono","Cascadia Code","Fira Code","Consolas","Microsoft YaHei",monospace !important;
 }
 .stTextInput > div > div > input:focus {
     border-color: #3574f0 !important;
-    box-shadow: 0 0 0 2px rgba(53, 116, 240, 0.15) !important;
+    box-shadow: 0 0 0 2px rgba(53,116,240,.15) !important;
 }
-.stTextInput > div > div > input::placeholder {
-    color: #5a5e66 !important;
-}
+.stTextInput > div > div > input::placeholder { color: #5a5e66 !important; }
 
-/* ---- Button ---- */
 .stButton > button {
     background: #3574f0 !important;
     color: #fff !important;
     border: none !important;
     border-radius: 4px !important;
     padding: 7px 20px !important;
-    font-size: 0.85rem !important;
+    font-size: 0.84rem !important;
     font-weight: 500 !important;
-    line-height: 1.4 !important;
-    transition: background 0.15s !important;
+    transition: background .15s !important;
 }
-.stButton > button:hover {
-    background: #4d89f5 !important;
-}
-.stButton > button:active {
-    background: #2b5fc2 !important;
-}
+.stButton > button:hover { background: #4d89f5 !important; }
+.stButton > button:active { background: #2b5fc2 !important; }
 
-/* ---- Secondary button ---- */
 .stDownloadButton > button {
     background: #2b2d30 !important;
     color: #ced0d6 !important;
     border: 1px solid #393b40 !important;
     border-radius: 4px !important;
-    padding: 6px 16px !important;
-    font-size: 0.82rem !important;
-    transition: all 0.15s !important;
+    padding: 6px 14px !important;
+    font-size: 0.8rem !important;
+    transition: all .15s !important;
 }
-.stDownloadButton > button:hover {
-    background: #32353a !important;
-    border-color: #3574f0 !important;
-}
-
-/* ---- Tabs (underline style) ---- */
-.stTabs [data-baseweb="tab-list"] {
-    gap: 0;
-    background: transparent;
-    border-bottom: 1px solid #393b40;
-    padding-bottom: 0;
-}
-.stTabs [data-baseweb="tab"] {
-    border-radius: 0;
-    padding: 8px 18px;
-    font-size: 0.85rem;
-    font-weight: 500;
-    color: #7a7e87;
-    background: transparent;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -1px;
-    transition: color 0.15s, border-color 0.15s;
-}
-.stTabs [data-baseweb="tab"]:hover {
-    color: #a8adbd;
-}
-.stTabs [aria-selected="true"] {
-    color: #3574f0 !important;
-    border-bottom-color: #3574f0 !important;
-    background: transparent !important;
-}
-
-/* ---- Metric cards ---- */
+/* Metric Cards */
 .metric-card {
     background: #2b2d30;
     border: 1px solid #393b40;
     border-radius: 4px;
-    padding: 16px;
+    padding: 14px 12px;
     text-align: center;
     height: 100%;
-    transition: border-color 0.15s;
+    transition: border-color .15s;
 }
-.metric-card:hover {
-    border-color: #4d5158;
-}
-.metric-card .mc-label {
+.metric-card:hover { border-color: #4d5158; }
+.metric-card.accent { border-left: 3px solid #3574f0; }
+.mc-label {
     color: #7a7e87;
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin-bottom: 6px;
+    letter-spacing: .04em;
+    margin-bottom: 4px;
 }
-.metric-card .mc-value {
-    color: #ced0d6;
-    font-size: 1.5rem;
-    font-weight: 600;
-}
-.metric-card.accent {
-    border-left: 3px solid #3574f0;
-}
+.mc-value { color: #ced0d6; font-size: 1.4rem; font-weight: 600; }
 
-/* ---- Panel / Section ---- */
-.section-panel {
-    background: #2b2d30;
-    border: 1px solid #393b40;
-    border-radius: 4px;
-    padding: 20px;
-    margin-bottom: 16px;
-}
-.section-panel > :first-child {
-    margin-top: 0;
-}
-
-/* ---- Dataframe ---- */
 [data-testid="stDataFrame"] {
     border-radius: 4px;
     overflow: hidden;
     border: 1px solid #393b40;
 }
-[data-testid="stDataFrame"] table {
-    font-size: 0.82rem;
-}
+[data-testid="stDataFrame"] table { font-size: 0.8rem; }
 [data-testid="stDataFrame"] th {
     background: #2b2d30 !important;
     color: #a8adbd !important;
-    font-weight: 600;
     border-color: #393b40 !important;
 }
-[data-testid="stDataFrame"] td {
-    border-color: #393b40 !important;
-    color: #ced0d6 !important;
-}
+[data-testid="stDataFrame"] td { border-color: #393b40 !important; color: #ced0d6 !important; }
 
-/* ---- Text area ---- */
 .stTextArea textarea {
     background: #2b2d30 !important;
     color: #a8adbd !important;
     border: 1px solid #393b40 !important;
     border-radius: 4px !important;
-    font-family: "JetBrains Mono", "Cascadia Code", "Fira Code", "Consolas",
-                 "Microsoft YaHei", monospace !important;
-    font-size: 0.82rem !important;
+    font-family: "JetBrains Mono","Cascadia Code","Fira Code","Consolas","Microsoft YaHei",monospace !important;
+    font-size: 0.8rem !important;
+}
+.stAlert { border-radius: 4px !important; border: 1px solid #393b40 !important; background: #2b2d30 !important; }
+.stSpinner > div { border-top-color: #3574f0 !important; }
+
+.app-title { font-size: 1.35rem; font-weight: 600; color: #ced0d6; margin-bottom: 2px; }
+.app-subtitle { font-size: 0.8rem; color: #7a7e87; margin-bottom: 18px; }
+.source-bar { font-size: 0.83rem; color: #7a7e87; padding: 6px 0 2px; }
+.source-bar a { color: #6B8EFF; text-decoration: none; }
+.source-bar a:hover { text-decoration: underline; color: #8fa7ff; }
+.empty-state { text-align: center; padding: 60px 20px; }
+.empty-state .et { font-size: 0.95rem; color: #7a7e87; margin-bottom: 4px; }
+.empty-state .ed { font-size: 0.8rem; color: #5a5e66; }
+
+/* ---- 标签页（radio 驱动，隐藏圆点 + 下划线风格） ---- */
+div[data-testid="stRadio"] > div[role="radiogroup"] {
+    gap: 0;
+    border-bottom: 1px solid #393b40;
+    padding-bottom: 0;
+    margin-bottom: 14px;
+}
+/* 隐藏 radio 输入圆圈 */
+div[data-testid="stRadio"] input[type="radio"] {
+    display: none !important;
+}
+div[data-testid="stRadio"] label {
+    padding: 8px 16px !important;
+    font-size: 0.84rem !important;
+    font-weight: 500 !important;
+    color: #7a7e87 !important;
+    background: transparent !important;
+    border-bottom: 2px solid transparent !important;
+    border-radius: 0 !important;
+    margin-bottom: -1px !important;
+    transition: color .15s, border-color .15s !important;
+    cursor: pointer !important;
+}
+div[data-testid="stRadio"] label:hover {
+    color: #a8adbd !important;
+}
+div[data-testid="stRadio"] label[data-selected="true"] {
+    color: #3574f0 !important;
+    border-bottom-color: #3574f0 !important;
 }
 
-/* ---- Selectbox ---- */
-.stSelectbox > div > div {
-    background: #2b2d30 !important;
-    border: 1px solid #393b40 !important;
-    border-radius: 4px !important;
-    color: #ced0d6 !important;
-}
-
-/* ---- Spinner ---- */
-.stSpinner > div {
-    border-top-color: #3574f0 !important;
-}
-
-/* ---- Alert ---- */
-.stAlert {
-    border-radius: 4px !important;
-    border: 1px solid #393b40 !important;
-    background: #2b2d30 !important;
-}
-
-/* ---- Expander ---- */
-.stExpander > details {
-    border-radius: 4px !important;
-    border: 1px solid #393b40 !important;
-    background: #2b2d30 !important;
-}
-
-/* ---- Title area ---- */
-.app-title {
-    font-size: 1.4rem;
-    font-weight: 600;
-    color: #ced0d6;
-    margin-bottom: 2px;
-}
-.app-subtitle {
-    font-size: 0.82rem;
-    color: #7a7e87;
-    margin-bottom: 20px;
-}
-
-/* ---- Source link ---- */
-.source-bar {
+.chart-info {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 0 4px;
-    font-size: 0.85rem;
-    color: #7a7e87;
-}
-.source-bar a {
-    color: #6B8EFF;
-    text-decoration: none;
-}
-.source-bar a:hover {
-    text-decoration: underline;
-    color: #8fa7ff;
-}
-
-/* ---- Empty state ---- */
-.empty {
-    text-align: center;
-    padding: 64px 20px;
-    color: #5a5e66;
-}
-.empty p:first-child {
-    font-size: 1rem;
-    color: #7a7e87;
-    margin-bottom: 4px;
-}
-.empty p:last-child {
+    gap: 0;
+    padding: 8px 14px;
+    background: #2b2d30;
+    border: 1px solid #393b40;
+    border-radius: 4px;
+    margin-bottom: 14px;
     font-size: 0.82rem;
 }
-
-/* ---- Compact table inside panels ---- */
-.compact-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.8rem;
-}
-.compact-table th, .compact-table td {
-    border: 1px solid #393b40;
-    padding: 5px 10px;
-    text-align: left;
-}
-.compact-table th {
-    background: #2b2d30;
+.ci-item {
     color: #a8adbd;
+    padding: 0 10px;
 }
-
-/* ---- Delete button ---- */
-button[kind="secondary"] {
-    background: transparent !important;
-    border: 1px solid #393b40 !important;
-    color: #7a7e87 !important;
-    border-radius: 4px !important;
-    padding: 2px 10px !important;
-    font-size: 0.75rem !important;
+.ci-label {
+    color: #7a7e87;
+    font-size: 0.73rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-right: 4px;
 }
-button[kind="secondary"]:hover {
-    border-color: #e0556a !important;
-    color: #e0556a !important;
+.ci-sep {
+    width: 1px;
+    height: 18px;
+    background: #393b40;
+    flex-shrink: 0;
 }
 </style>
 """, unsafe_allow_html=True)
 
 # ================================================================
-#  Session State
+#  Session State 初始化
 # ================================================================
-INIT = {
+DEFAULTS = {
     "analyzed": False,
-    "url": "",
-    "page_title": "",
-    "text": "",
-    "counter": None,
-    "stats": None,
-    "html_tables": [],
-    "csv_data": "",
-    "keywords_tfidf": [],
-    "keywords_textrank": [],
-    "pos_data": None,
-    "ngrams": [],
-    "url_b": "",
-    "analyzed_b": False,
-    "title_b": "",
-    "text_b": "",
-    "counter_b": None,
-    "comparison": None,
+    "url": "", "page_title": "", "text": "", "counter": None,
+    "stats": None, "html_tables": [],
+    "keywords_tfidf": [], "keywords_textrank": [],
+    "pos_data": None, "ngrams": [], "csv_data": "",
+    # 对比模式
+    "url_b": "", "analyzed_b": False,
+    "title_b": "", "text_b": "", "counter_b": None, "comparison": None,
+    # 导出
+    "html_report_data": "",
+    "html_report_ready": False,
+    "active_tab": "概览",
 }
-for k, v in INIT.items():
+for k, v in DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
 # ================================================================
-#  Sidebar
+#  数据预计算（在侧边栏之前，确保导出的 csv_data 可用）
+# ================================================================
+if st.session_state.analyzed and st.session_state.counter:
+    _filtered = Counter(
+        {k: v for k, v in st.session_state.counter.items() if v >= 2}
+    )
+    _csv = counter_to_csv(_filtered)
+    # 只在发生变化时更新，避免不必要的 rerun
+    st.session_state.csv_data = _csv
+
+# ================================================================
+#  侧边栏
 # ================================================================
 with st.sidebar:
     st.markdown("""
-    <div style="padding:4px 0 16px;">
-        <div style="font-size:1.1rem;font-weight:600;color:#ced0d6;">Text Analyzer</div>
-        <div style="font-size:0.75rem;color:#5a5e66;">Web Content Analysis</div>
+    <div style="padding:2px 0 14px;">
+        <div style="font-size:1.05rem;font-weight:600;color:#ced0d6;">文本分析工具</div>
+        <div style="font-size:0.73rem;color:#5a5e66;">Web Content Analyzer</div>
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown("""<div style="font-size:0.72rem;font-weight:600;color:#7a7e87;
-    letter-spacing:0.05em;text-transform:uppercase;margin-bottom:6px;">Filter</div>""",
-                unsafe_allow_html=True)
+    st.markdown(
+        '<div style="font-size:0.7rem;font-weight:600;color:#7a7e87;'
+        'letter-spacing:.05em;text-transform:uppercase;margin-bottom:4px;">'
+        '过滤</div>', unsafe_allow_html=True,
+    )
+    min_freq = st.slider("最低词频", 1, 20, 2, help="过滤出现次数低于此值的词语")
 
-    min_freq = st.slider("Min Frequency", 1, 20, 2,
-                         help="Filter words below this count")
-
-    st.markdown("""<div style="font-size:0.72rem;font-weight:600;color:#7a7e87;
-    letter-spacing:0.05em;text-transform:uppercase;margin:18px 0 6px;">Chart</div>""",
-                unsafe_allow_html=True)
-
+    st.markdown(
+        '<div style="font-size:0.7rem;font-weight:600;color:#7a7e87;'
+        'letter-spacing:.05em;text-transform:uppercase;margin:16px 0 4px;">'
+        '图表</div>', unsafe_allow_html=True,
+    )
     chart_type = st.selectbox(
-        "Chart Type",
+        "图表类型",
         ["词云", "柱状图", "折线图", "饼图", "漏斗图", "散点图",
          "雷达图", "树图", "箱线图（词频分布）"],
         label_visibility="collapsed",
     )
 
-    st.markdown("""<div style="font-size:0.72rem;font-weight:600;color:#7a7e87;
-    letter-spacing:0.05em;text-transform:uppercase;margin:18px 0 6px;">Export</div>""",
-                unsafe_allow_html=True)
+    st.markdown(
+        '<div style="font-size:0.7rem;font-weight:600;color:#7a7e87;'
+        'letter-spacing:.05em;text-transform:uppercase;margin:16px 0 4px;">'
+        '导出</div>', unsafe_allow_html=True,
+    )
 
-    if st.session_state.analyzed and st.session_state.csv_data:
+    safe_name = ""
+    if st.session_state.analyzed:
         safe_name = st.session_state.page_title[:30].replace("/", "_").replace("\\", "_")
+
+    # -- CSV 导出（始终可见，数据已预计算） --
+    if st.session_state.analyzed and st.session_state.csv_data:
         st.download_button(
-            label="Export CSV",
-            data=st.session_state.csv_data,
-            file_name=f"analysis_{safe_name}.csv",
-            mime="text/csv",
-            use_container_width=True,
+            "导出 CSV", data=st.session_state.csv_data,
+            file_name=f"词频分析_{safe_name}.csv",
+            mime="text/csv", use_container_width=True,
         )
-        if st.button("Export HTML Report", use_container_width=True):
-            with st.spinner("Generating report..."):
-                report = export_html_report(
-                    st.session_state.page_title,
-                    st.session_state.url,
-                    st.session_state.stats,
-                    create_chart(chart_type,
-                                 Counter({k: v for k, v in st.session_state.counter.items()
-                                          if v >= min_freq}).most_common(20)),
-                    Counter({k: v for k, v in st.session_state.counter.items()
-                            if v >= min_freq}).most_common(20),
+
+    # -- HTML 报告生成 --
+    if st.session_state.analyzed:
+        if st.button("生成 HTML 报告", use_container_width=True,
+                     key="gen_html_btn"):
+            with st.spinner("正在生成报告..."):
+                _f = Counter({k: v for k, v in st.session_state.counter.items()
+                              if v >= min_freq})
+                _c = create_chart(chart_type, _f.most_common(20))
+                _r = build_html_report(
+                    st.session_state.page_title, st.session_state.url,
+                    st.session_state.stats, _c, _f.most_common(20),
                     st.session_state.keywords_tfidf,
-                    st.session_state.pos_data,
                     st.session_state.ngrams,
                 )
-                st.download_button(
-                    label="Download HTML Report",
-                    data=report,
-                    file_name=f"report_{safe_name}.html",
-                    mime="text/html",
-                    use_container_width=True,
-                )
+                st.session_state.html_report_data = _r
+                st.session_state.html_report_ready = True
+                st.rerun()
 
-    st.markdown("""<div style="margin-top:24px;padding:12px 0;
-    border-top:1px solid #393b40;font-size:0.7rem;color:#5a5e66;line-height:1.6;">
-    <p>1. Enter a URL<br>2. Click Analyze<br>3. Browse tabs for insights</p>
-    </div>""", unsafe_allow_html=True)
+        # HTML 报告下载按钮（报告生成后持久可见）
+        if st.session_state.html_report_ready and st.session_state.html_report_data:
+            st.download_button(
+                "下载 HTML 报告", data=st.session_state.html_report_data,
+                file_name=f"分析报告_{safe_name}.html",
+                mime="text/html", use_container_width=True,
+            )
+            if st.button("清除报告缓存", key="clear_html"):
+                st.session_state.html_report_data = ""
+                st.session_state.html_report_ready = False
+                st.rerun()
+
+    st.markdown("""
+    <div style="margin-top:20px;padding:10px 0;border-top:1px solid #393b40;
+    font-size:0.68rem;color:#5a5e66;line-height:1.7;">
+    <p>1. 输入网页 URL<br>2. 点击「开始分析」<br>3. 切换标签页查看不同维度</p>
+    </div>
+    """, unsafe_allow_html=True)
 
 # ================================================================
-#  Main Content
+#  主内容
 # ================================================================
-st.markdown('<div class="app-title">Web Text Analyzer</div>', unsafe_allow_html=True)
+st.markdown('<div class="app-title">Web 文本分析系统</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="app-subtitle">Fetch, tokenize, analyze — all from a URL</div>',
+    '<div class="app-subtitle">输入 URL，自动抓取网页并完成分词、统计与多维可视化</div>',
     unsafe_allow_html=True,
 )
 
-# URL input row
-col_url, col_btn = st.columns([5, 1], gap="small")
-with col_url:
-    url = st.text_input(
-        "URL", placeholder="https://example.com/article",
-        label_visibility="collapsed", key="url_input",
-    )
-with col_btn:
-    analyze_clicked = st.button("Analyze", use_container_width=True)
+col_u, col_b = st.columns([5, 1], gap="small")
+with col_u:
+    url = st.text_input("文章 URL", placeholder="https://example.com/article",
+                        label_visibility="collapsed", key="url_input")
+with col_b:
+    clicked = st.button("开始分析", use_container_width=True)
 
 # ================================================================
-#  Analysis Logic
+#  分析逻辑
 # ================================================================
-if analyze_clicked and url:
-    with st.spinner("Fetching page..."):
+if clicked and url:
+    with st.spinner("正在抓取网页..."):
         try:
             title, text, soup = fetch_page(url)
         except ConnectionError as e:
@@ -450,34 +353,35 @@ if analyze_clicked and url:
             st.warning(str(e))
             st.stop()
 
-    with st.spinner("Tokenizing..."):
+    with st.spinner("正在分词..."):
         counter = cut_words(text)
         stats = get_text_stats(text, counter)
-        html_tables = extract_html_tables(soup)
+        tables = extract_html_tables(soup)
 
-    with st.spinner("Extracting keywords..."):
-        kw_tfidf = extract_keywords_tfidf(text, topK=20)
-        kw_tr = extract_keywords_textrank(text, topK=20)
-        pos_data = get_pos_distribution(text)
-        ngrams = get_ngrams(text, n=2, topK=20)
+    with st.spinner("正在提取关键词..."):
+        kw_tf = extract_keywords_tfidf(text, 20)
+        kw_tr = extract_keywords_textrank(text, 20)
+        pos = get_pos_distribution(text)
+        ng = get_ngrams(text, n=2, topK=20)
 
-    # Save to history
+    # 保存历史
     try:
-        save_analysis(url, title, counter, kw_tfidf, topK=10)
+        save_history(url, title, counter, kw_tf)
     except Exception:
         pass
 
     st.session_state.update({
-        "analyzed": True, "url": url, "page_title": title, "text": text,
-        "counter": counter, "stats": stats, "html_tables": html_tables,
-        "keywords_tfidf": kw_tfidf, "keywords_textrank": kw_tr,
-        "pos_data": pos_data, "ngrams": ngrams,
+        "analyzed": True, "url": url, "page_title": title,
+        "text": text, "counter": counter, "stats": stats,
+        "html_tables": tables,
+        "keywords_tfidf": kw_tf, "keywords_textrank": kw_tr,
+        "pos_data": pos, "ngrams": ng,
         "analyzed_b": False, "comparison": None,
     })
     st.rerun()
 
 # ================================================================
-#  Results Display
+#  结果展示
 # ================================================================
 if st.session_state.analyzed and st.session_state.counter:
     counter = st.session_state.counter
@@ -486,210 +390,180 @@ if st.session_state.analyzed and st.session_state.counter:
     chart = create_chart(chart_type, top20)
     st.session_state.csv_data = counter_to_csv(filtered)
 
-    # Source bar
     st.markdown(
         f'<div class="source-bar">'
-        f'Source: <a href="{st.session_state.url}" target="_blank">'
+        f'来源：<a href="{st.session_state.url}" target="_blank">'
         f'{st.session_state.page_title}</a></div>',
         unsafe_allow_html=True,
     )
 
-    # ---- Tabs ----
-    t1, t2, t3, t4, t5 = st.tabs([
-        "Overview", "Deep Analysis", "Charts", "Compare", "History",
-    ])
+    # ---- 标签页导航（radio 驱动状态，CSS 隐藏圆点 + 下划线标签样式） ----
+    TAB_NAMES = ["概览", "深度分析", "图表", "对比分析", "历史记录"]
+    active = st.session_state.active_tab
 
-    # ================================================================
-    #  TAB 1: OVERVIEW
-    # ================================================================
-    with t1:
-        stats = st.session_state.stats
+    # 隐藏的 radio 驱动状态，上层 CSS 美化
+    active = st.radio(
+        "tabnav", TAB_NAMES,
+        index=TAB_NAMES.index(active) if active in TAB_NAMES else 0,
+        horizontal=True, label_visibility="collapsed",
+    )
+    if active != st.session_state.active_tab:
+        st.session_state.active_tab = active
+        st.rerun()
 
-        # Metrics row
+    # 根据活跃 Tab 条件渲染内容（只渲染当前 Tab，图表不被隐藏 iframe 问题）
+    if active == "概览":
+        s = st.session_state.stats
         cols = st.columns(5)
-        for i, (label, val) in enumerate([
-            ("Total chars", stats["总字符数（含空格换行）"]),
-            ("Words", stats["有效词语数"]),
-            ("Unique", stats["唯一词语数"]),
-            ("Sentences", stats["句子数"]),
-            ("Paragraphs", stats["段落数"]),
-        ]):
-            accent = " accent" if i == 1 else ""
+        metrics = [
+            ("总字符数", s["总字符数（含空格换行）"]),
+            ("有效词数", s["有效词语数"]),
+            ("唯一词数", s["唯一词语数"]),
+            ("句子数", s["句子数"]),
+            ("段落数", s["段落数"]),
+        ]
+        for i, (label, val) in enumerate(metrics):
             with cols[i]:
-                st.markdown(f"""
-                <div class="metric-card{accent}">
-                    <div class="mc-label">{label}</div>
-                    <div class="mc-value">{val:,}</div>
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(
+                    f'<div class="metric-card{" accent" if i==1 else ""}">'
+                    f'<div class="mc-label">{label}</div>'
+                    f'<div class="mc-value">{val:,}</div></div>',
+                    unsafe_allow_html=True,
+                )
 
-        # Secondary metrics
         cols2 = st.columns(3)
-        for i, (label, val) in enumerate([
-            ("Chars (no space)", stats["有效字符数（去空格换行）"]),
-            ("Avg word length", stats["平均词长"]),
-            ("Unique ratio", f"{stats['唯一词语数'] / max(1, stats['有效词语数']) * 100:.1f}%"),
-        ]):
+        sec = [
+            ("有效字符数", s["有效字符数（去空格换行）"]),
+            ("平均词长", s["平均词长"]),
+            ("词频集中度", f"{s['唯一词语数'] / max(1, s['有效词语数']) * 100:.1f}%"),
+        ]
+        for i, (label, val) in enumerate(sec):
             with cols2[i]:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="mc-label">{label}</div>
-                    <div class="mc-value">{val}</div>
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(
+                    f'<div class="metric-card">'
+                    f'<div class="mc-label">{label}</div>'
+                    f'<div class="mc-value">{val}</div></div>',
+                    unsafe_allow_html=True,
+                )
 
-        # Keywords + Chart side by side
         st.markdown("")
-        col_kw, col_ch = st.columns([1, 2])
-        with col_kw:
-            st.markdown("#### Top Keywords (TF-IDF)")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("#### 关键词（TF-IDF）")
             if st.session_state.keywords_tfidf:
-                kw_df = pd.DataFrame(st.session_state.keywords_tfidf, columns=["Word", "Weight"])
-                kw_df["Weight"] = kw_df["Weight"].round(4)
-                st.dataframe(kw_df, use_container_width=True, hide_index=True, height=370)
+                kw_df = pd.DataFrame(st.session_state.keywords_tfidf, columns=["词语", "权重"])
+                kw_df["权重"] = kw_df["权重"].round(4)
+                st.dataframe(kw_df, use_container_width=True, hide_index=True, height=310)
             else:
-                st.caption("No keywords extracted.")
-
-        with col_ch:
-            st.markdown(f"#### Chart — {chart_type}")
-            if top20:
-                st_pyecharts(chart, height="380px")
+                st.caption("暂无关键词数据")
+        with c2:
+            st.markdown("#### 高频短语（2-gram）")
+            if st.session_state.ngrams:
+                ng_df = pd.DataFrame(st.session_state.ngrams[:15], columns=["短语", "频次"])
+                st.dataframe(ng_df, use_container_width=True, hide_index=True, height=310)
             else:
-                st.info("No words pass the frequency filter. Lower the threshold in sidebar.")
+                st.caption("暂无短语数据")
 
-    # ================================================================
-    #  TAB 2: DEEP ANALYSIS
-    # ================================================================
-    with t2:
-        # Row 1: TF-IDF + TextRank keywords
-        col_a, col_b = st.columns(2)
-        with col_a:
-            st.markdown("#### TF-IDF Keywords")
+    elif active == "深度分析":
+        ca, cb = st.columns(2)
+        with ca:
+            st.markdown("#### TF-IDF 关键词")
             if st.session_state.keywords_tfidf:
-                kw_df = pd.DataFrame(st.session_state.keywords_tfidf, columns=["Word", "Weight"])
-                kw_df["Weight"] = kw_df["Weight"].round(4)
-                kw_df.index = range(1, len(kw_df) + 1)
-                st.dataframe(kw_df, use_container_width=True, height=340)
+                df = pd.DataFrame(st.session_state.keywords_tfidf, columns=["词语", "权重"])
+                df["权重"] = df["权重"].round(4)
+                df.index = range(1, len(df) + 1)
+                st.dataframe(df, use_container_width=True, height=320)
             else:
                 st.caption("—")
-
-        with col_b:
-            st.markdown("#### TextRank Keywords")
+        with cb:
+            st.markdown("#### TextRank 关键词")
             if st.session_state.keywords_textrank:
-                tr_df = pd.DataFrame(st.session_state.keywords_textrank, columns=["Word", "Weight"])
-                tr_df["Weight"] = tr_df["Weight"].round(4)
-                tr_df.index = range(1, len(tr_df) + 1)
-                st.dataframe(tr_df, use_container_width=True, height=340)
+                df = pd.DataFrame(st.session_state.keywords_textrank, columns=["词语", "权重"])
+                df["权重"] = df["权重"].round(4)
+                df.index = range(1, len(df) + 1)
+                st.dataframe(df, use_container_width=True, height=320)
             else:
                 st.caption("—")
 
         st.markdown("---")
-
-        # Row 2: POS distribution + N-Grams
-        col_c, col_d = st.columns(2)
-        with col_c:
-            st.markdown("#### POS Distribution")
+        cc, cd = st.columns(2)
+        with cc:
+            st.markdown("#### 词性分布")
             pos = st.session_state.pos_data
             if pos and pos.get("categories"):
-                pos_df = pd.DataFrame(
-                    pos["categories"].items(), columns=["Category", "Count"]
-                ).sort_values("Count", ascending=False)
-                pos_df.index = range(1, len(pos_df) + 1)
-                st.dataframe(pos_df, use_container_width=True, height=260)
-
-                # Show named entities if any
-                if pos.get("top_entities"):
+                df = pd.DataFrame(pos["categories"].items(), columns=["词性", "数量"])
+                df = df.sort_values("数量", ascending=False)
+                df.index = range(1, len(df) + 1)
+                st.dataframe(df, use_container_width=True, height=240)
+                if pos.get("entities"):
                     st.markdown("")
-                    for ent_type, ent_list in pos["top_entities"].items():
-                        if ent_list:
-                            st.markdown(f"**{ent_type}** — "
-                                        + ", ".join(w for w, _ in ent_list[:8]))
+                    for etype, elist in pos["entities"].items():
+                        if elist:
+                            st.markdown(f"**{etype}**：" + "、".join(w for w, _ in elist[:8]))
             else:
-                st.caption("POS data not available.")
-
-        with col_d:
-            st.markdown("#### Top 2-gram Phrases")
+                st.caption("词性数据不可用")
+        with cd:
+            st.markdown("#### 高频短语（2-gram）")
             if st.session_state.ngrams:
-                ng_df = pd.DataFrame(st.session_state.ngrams, columns=["Phrase", "Count"])
-                ng_df.index = range(1, len(ng_df) + 1)
-                st.dataframe(ng_df, use_container_width=True, height=260)
+                df = pd.DataFrame(st.session_state.ngrams, columns=["短语", "频次"])
+                df.index = range(1, len(df) + 1)
+                st.dataframe(df, use_container_width=True, height=240)
             else:
-                st.caption("No n-grams extracted.")
+                st.caption("—")
 
-        # Row 3: Word co-occurrence network
         st.markdown("---")
-        st.markdown("#### Word Co-occurrence Network")
+        st.markdown("#### 词共现网络图")
         try:
             graph = create_cooccurrence_graph(filtered)
             st_pyecharts(graph, height="500px")
         except Exception:
-            st.caption("Unable to generate co-occurrence graph (insufficient data).")
+            st.caption("数据不足，无法生成网络图")
 
-    # ================================================================
-    #  TAB 3: CHARTS
-    # ================================================================
-    with t3:
+    elif active == "图表":
         st.markdown(
-            f"**Chart:** {chart_type} &nbsp;|&nbsp; "
-            f"**Points:** {len(top20)} &nbsp;|&nbsp; "
-            f"**Min freq:** {min_freq}"
+            f'<div class="chart-info">'
+            f'<span class="ci-item"><span class="ci-label">图表</span> {chart_type}</span>'
+            f'<span class="ci-sep"></span>'
+            f'<span class="ci-item"><span class="ci-label">数据点</span> {len(top20)}</span>'
+            f'<span class="ci-sep"></span>'
+            f'<span class="ci-item"><span class="ci-label">最低词频</span> {min_freq}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
         )
         if top20:
             st_pyecharts(chart, height="620px")
         else:
-            st.info("No words pass the current frequency filter.")
-        st.caption("Switch chart type in the sidebar to explore different views.")
+            st.info("当前过滤条件下无词频数据，请在侧边栏降低最低词频")
+        st.caption("在侧边栏切换图表类型以查看不同可视化效果")
 
-        st.markdown("---")
-        st.markdown("#### Word Frequency Table")
-        if filtered:
-            freq_df = pd.DataFrame(filtered.most_common(100), columns=["Word", "Frequency"])
-            freq_df.index = range(1, len(freq_df) + 1)
-            freq_df.index.name = "Rank"
-            st.dataframe(
-                freq_df, use_container_width=True, height=400,
-                column_config={
-                    "Word": st.column_config.TextColumn("Word", width="medium"),
-                    "Frequency": st.column_config.NumberColumn("Freq", format="%d"),
-                },
-            )
-            st.caption(
-                f"{len(filtered)} words (filtered from {len(counter)}, "
-                f"threshold >= {min_freq})"
-            )
-
-        # HTML tables
         if st.session_state.html_tables:
             st.markdown("---")
-            st.markdown("#### HTML Tables from Page")
+            st.markdown("#### 网页中的表格")
             for i, tbl in enumerate(st.session_state.html_tables):
                 st.markdown(f"**{tbl['caption']}**")
                 if tbl["rows"] and tbl["headers"]:
-                    tbl_df = pd.DataFrame(tbl["rows"], columns=tbl["headers"])
-                    st.dataframe(tbl_df, use_container_width=True, height=240)
+                    df = pd.DataFrame(tbl["rows"], columns=tbl["headers"])
+                    st.dataframe(df, use_container_width=True, height=220)
                 elif tbl["rows"]:
-                    st.dataframe(pd.DataFrame(tbl["rows"]), use_container_width=True, height=240)
+                    st.dataframe(pd.DataFrame(tbl["rows"]), use_container_width=True, height=220)
 
-    # ================================================================
-    #  TAB 4: COMPARE
-    # ================================================================
-    with t4:
-        st.markdown("#### Compare Two URLs")
-        st.caption("Analyze a second URL to compare word usage with the current one.")
+    elif active == "对比分析":
+        st.markdown("#### 双 URL 对比分析")
+        st.caption("输入第二个 URL，与当前文章进行词频差异分析")
 
-        col_u, col_go = st.columns([5, 1], gap="small")
-        with col_u:
+        cu, cgo = st.columns([5, 1], gap="small")
+        with cu:
             url_b = st.text_input(
-                "Second URL", placeholder="https://example.com/another-article",
+                "第二个 URL", placeholder="https://example.com/another",
                 label_visibility="collapsed", key="url_b_input",
             )
-        with col_go:
-            compare_clicked = st.button("Compare", use_container_width=True)
+        with cgo:
+            cmp_clicked = st.button("对比", use_container_width=True)
 
-        if compare_clicked and url_b:
-            with st.spinner("Fetching second URL..."):
+        if cmp_clicked and url_b:
+            with st.spinner("正在抓取第二个网页..."):
                 try:
-                    title_b, text_b, soup_b = fetch_page(url_b)
+                    ttl_b, txt_b, _ = fetch_page(url_b)
                 except ConnectionError as e:
                     st.error(str(e))
                     st.stop()
@@ -697,123 +571,113 @@ if st.session_state.analyzed and st.session_state.counter:
                     st.warning(str(e))
                     st.stop()
 
-            with st.spinner("Analyzing..."):
-                counter_b = cut_words(text_b)
-                comparison = compare_counters(counter, counter_b)
+            with st.spinner("正在分析对比..."):
+                cnt_b = cut_words(txt_b)
+                comp = compare_counters(counter, cnt_b)
 
                 st.session_state.url_b = url_b
-                st.session_state.title_b = title_b
-                st.session_state.text_b = text_b
-                st.session_state.counter_b = counter_b
-                st.session_state.comparison = comparison
+                st.session_state.title_b = ttl_b
+                st.session_state.text_b = txt_b
+                st.session_state.counter_b = cnt_b
+                st.session_state.comparison = comp
                 st.session_state.analyzed_b = True
                 st.rerun()
 
         if st.session_state.analyzed_b and st.session_state.comparison:
             comp = st.session_state.comparison
-
-            # Summary cards
-            st.markdown("##### Summary")
+            st.markdown("##### 对比摘要")
             cols = st.columns(4)
             for i, (label, val) in enumerate([
-                ("Shared words", comp["shared_count"]),
-                ("Only in A", comp["only_a_count"]),
-                ("Only in B", comp["only_b_count"]),
-                ("Total words B", comp["total_b"]),
+                ("两篇共有词", comp["shared"]),
+                ("仅 A 有", comp["only_1_count"]),
+                ("仅 B 有", comp["only_2_count"]),
+                ("B 总词数", comp["total_2"]),
             ]):
                 with cols[i]:
-                    st.markdown(f"""
-                    <div class="metric-card">
-                        <div class="mc-label">{label}</div>
-                        <div class="mc-value">{val:,}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(
+                        f'<div class="metric-card">'
+                        f'<div class="mc-label">{label}</div>'
+                        f'<div class="mc-value">{val:,}</div></div>',
+                        unsafe_allow_html=True,
+                    )
 
-            # Shared words
-            col_s, col_o = st.columns(2)
-            with col_s:
-                st.markdown("##### Top Shared Words")
+            cs, co = st.columns(2)
+            with cs:
+                st.markdown("##### 两篇共有高频词")
                 if comp["top_shared"]:
-                    s_df = pd.DataFrame(comp["top_shared"], columns=["Word", "Total Freq"])
-                    st.dataframe(s_df, use_container_width=True, hide_index=True, height=300)
-            with col_o:
-                st.markdown("##### Unique to Current (A)")
-                if comp["top_only_a"]:
-                    a_df = pd.DataFrame(comp["top_only_a"], columns=["Word", "Freq"])
-                    st.dataframe(a_df, use_container_width=True, hide_index=True, height=300)
+                    df = pd.DataFrame(comp["top_shared"], columns=["词语", "总词频"])
+                    st.dataframe(df, use_container_width=True, hide_index=True, height=280)
+            with co:
+                st.markdown("##### 仅当前文章 (A) 出现")
+                if comp["top_only_1"]:
+                    df = pd.DataFrame(comp["top_only_1"], columns=["词语", "词频"])
+                    st.dataframe(df, use_container_width=True, hide_index=True, height=280)
                 else:
-                    st.caption("No unique words.")
+                    st.caption("无独有词")
 
-            # Comparison chart
             st.markdown("---")
-            st.markdown("##### Side-by-side Frequency")
-            comp_chart = create_comparison_chart(
-                [(w, dict(comp["top_shared"]).get(w, 0)) for w, _ in comp["top_shared"][:10]],
-                [(w, dict(comp["top_only_b"]).get(w, 0)) for w, _ in comp["top_only_b"][:10]],
+            st.markdown("##### 词频对比图")
+            cmp_chart = create_comparison_chart(
+                [(w, dict(comp["top_shared"]).get(w, 0)) for w, _ in comp["top_shared"][:15]],
+                [(w, dict(comp["top_only_2"]).get(w, 0)) for w, _ in comp["top_only_2"][:15]],
+                title=f"「{st.session_state.page_title[:20]}」vs「{st.session_state.title_b[:20]}」",
             )
-            st_pyecharts(comp_chart, height="450px")
+            st_pyecharts(cmp_chart, height="450px")
 
-            # Raw text comparison
-            with st.expander("View both extracted texts"):
-                col_t1, col_t2 = st.columns(2)
-                with col_t1:
-                    st.markdown(f"**A:** {st.session_state.page_title}")
-                    st.text_area("A", value=st.session_state.text[:2000], height=300,
+            with st.expander("查看两篇原文"):
+                x1, x2 = st.columns(2)
+                with x1:
+                    st.markdown(f"**A：**{st.session_state.page_title}")
+                    st.text_area("A", value=st.session_state.text[:1500], height=280,
                                  disabled=True, label_visibility="collapsed")
-                with col_t2:
-                    st.markdown(f"**B:** {st.session_state.title_b}")
-                    st.text_area("B", value=st.session_state.text_b[:2000], height=300,
+                with x2:
+                    st.markdown(f"**B：**{st.session_state.title_b}")
+                    st.text_area("B", value=st.session_state.text_b[:1500], height=280,
                                  disabled=True, label_visibility="collapsed")
 
-    # ================================================================
-    #  TAB 5: HISTORY
-    # ================================================================
-    with t5:
-        st.markdown("#### Analysis History")
+    elif active == "历史记录":
+        st.markdown("#### 分析历史")
         try:
-            history = get_history(limit=30)
+            history = load_history(30)
         except Exception:
             history = []
 
         if history:
             for rec in history:
-                with st.expander(
-                    f"{rec['title'][:60]} — {rec['created_at']}",
-                ):
-                    st.markdown(
-                        f"**URL:** <{rec['url']}>  |  "
-                        f"**Words:** {rec['total_words']}  |  "
-                        f"**Unique:** {rec['unique_words']}"
-                    )
-                    try:
-                        top = json.loads(rec.get("top_words", "[]"))
-                        if top:
-                            st.markdown("**Top words:** " + ", ".join(
-                                f"{w}({c})" for w, c in top[:8]
-                            ))
-                    except (json.JSONDecodeError, TypeError):
-                        pass
+                top_words_str = ""
+                try:
+                    top = json.loads(rec.get("top_words", "[]"))
+                    top_words_str = "、".join(f"{w}({c})" for w, c in top[:6])
+                except (json.JSONDecodeError, TypeError):
+                    pass
 
-                    if st.button(f"Delete this record", key=f"del_{rec['id']}"):
+                with st.expander(f"{rec['title'][:50]}  —  {rec['created_at']}"):
+                    st.markdown(
+                        f"**URL：**<{rec['url']}>  |  "
+                        f"**总词数：**{rec['total_words']}  |  "
+                        f"**唯一词：**{rec['unique_words']}"
+                    )
+                    if top_words_str:
+                        st.markdown(f"**高频词：**{top_words_str}")
+                    if st.button("删除此记录", key=f"del_{rec['id']}"):
                         try:
-                            delete_history(rec["id"])
+                            remove_history(rec["id"])
                             st.rerun()
                         except Exception:
-                            st.error("Failed to delete.")
-            st.caption(f"{len(history)} records")
+                            st.error("删除失败")
+            st.caption(f"共 {len(history)} 条记录")
         else:
             st.markdown("""
-            <div class="empty">
-                <p>No analysis history yet</p>
-                <p>Analyze a URL to automatically save it here.</p>
+            <div class="empty-state">
+                <p class="et">暂无分析记录</p>
+                <p class="ed">分析任意 URL 后将自动保存到此处</p>
             </div>
             """, unsafe_allow_html=True)
 
 else:
-    # Empty state
     st.markdown("""
-    <div class="empty">
-        <p>Enter a URL above and click "Analyze" to get started.</p>
-        <p>Supports Chinese web pages — tokenization, keyword extraction, visualization, and comparison.</p>
+    <div class="empty-state">
+        <p class="et">在上方输入网页 URL，点击「开始分析」即可开始</p>
+        <p class="ed">支持中文网页的分词、关键词提取、多维图表与对比分析</p>
     </div>
     """, unsafe_allow_html=True)
