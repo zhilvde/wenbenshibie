@@ -13,12 +13,18 @@ from pyecharts.charts import (
 _C_BLUE = "#6B8EFF"
 _C_RED = "#FF6B8E"
 _C_BG = "#1e1f22"
-_C_TEXT = "#ced0d6"
-_C_SUB = "#9b9da4"
+_C_TEXT = "#e8eaed"       # 标题 / 主要文字（提亮）
+_C_SUB = "#bcc0c7"        # 轴标签 / 次要文字（提亮）
+_C_LEGEND = "#c4c7cc"     # 图例 / 饼图标签
 
 
 def _title_opt(title: str) -> opts.TitleOpts:
-    return opts.TitleOpts(title=title, title_textstyle_opts=opts.TextStyleOpts(color=_C_TEXT, font_size=14))
+    return opts.TitleOpts(
+        title=title,
+        title_textstyle_opts=opts.TextStyleOpts(color=_C_TEXT, font_size=14),
+        pos_left="center",
+        pos_top="2%",
+    )
 
 
 def _tooltip_opt(chart_type: str) -> opts.TooltipOpts:
@@ -27,7 +33,35 @@ def _tooltip_opt(chart_type: str) -> opts.TooltipOpts:
 
 
 def _xaxis_opt() -> opts.AxisOpts:
-    return opts.AxisOpts(axislabel_opts=opts.LabelOpts(rotate=45, interval=0, color=_C_SUB))
+    return opts.AxisOpts(
+        axislabel_opts=opts.LabelOpts(rotate=45, interval=0, color=_C_SUB),
+        name_textstyle_opts=opts.TextStyleOpts(color=_C_SUB),
+    )
+
+
+def _yaxis_opt() -> opts.AxisOpts:
+    return opts.AxisOpts(
+        axislabel_opts=opts.LabelOpts(color=_C_SUB),
+        name_textstyle_opts=opts.TextStyleOpts(color=_C_SUB),
+        splitline_opts=opts.SplitLineOpts(
+            is_show=True,
+            linestyle_opts=opts.LineStyleOpts(color="#2a2c31"),
+        ),
+    )
+
+
+def _legend_opt() -> opts.LegendOpts:
+    return opts.LegendOpts(
+        textstyle_opts=opts.TextStyleOpts(color=_C_LEGEND),
+    )
+
+
+def _label_opt() -> opts.LabelOpts:
+    """饼图 / 漏斗图内的标签样式。"""
+    return opts.LabelOpts(
+        color=_C_LEGEND,
+        font_size=11,
+    )
 
 
 def create_chart(chart_type: str, top20: list[tuple[str, int]]) -> Any:
@@ -79,6 +113,8 @@ def _bar(words, freqs, top20):
             title_opts=_title_opt("词频柱状图"),
             tooltip_opts=_tooltip_opt("柱状图"),
             xaxis_opts=_xaxis_opt(),
+            yaxis_opts=_yaxis_opt(),
+            legend_opts=_legend_opt(),
         )
     )
 
@@ -92,6 +128,8 @@ def _line(words, freqs, top20):
             title_opts=_title_opt("词频折线图"),
             tooltip_opts=_tooltip_opt("折线图"),
             xaxis_opts=_xaxis_opt(),
+            yaxis_opts=_yaxis_opt(),
+            legend_opts=_legend_opt(),
         )
     )
 
@@ -99,10 +137,11 @@ def _line(words, freqs, top20):
 def _pie(words, freqs, top20):
     return (
         Pie(init_opts=opts.InitOpts(bg_color=_C_BG))
-        .add("", top20, radius=["40%", "75%"])
+        .add("", top20, radius=["40%", "75%"], label_opts=_label_opt())
         .set_global_opts(
             title_opts=_title_opt("词频饼图"),
             tooltip_opts=_tooltip_opt("饼图"),
+            legend_opts=_legend_opt(),
         )
     )
 
@@ -110,11 +149,11 @@ def _pie(words, freqs, top20):
 def _funnel(words, freqs, top20):
     return (
         Funnel(init_opts=opts.InitOpts(bg_color=_C_BG))
-        .add("", top20, sort_="descending")
+        .add("", top20, sort_="descending", label_opts=_label_opt())
         .set_global_opts(
-            title_opts=opts.TitleOpts(title="词频漏斗图", pos_left="center",
-                                      title_textstyle_opts=opts.TextStyleOpts(color=_C_TEXT)),
+            title_opts=_title_opt("词频漏斗图"),
             tooltip_opts=_tooltip_opt("漏斗图"),
+            legend_opts=_legend_opt(),
         )
     )
 
@@ -128,16 +167,31 @@ def _scatter(words, freqs, top20):
             title_opts=_title_opt("词频散点图"),
             tooltip_opts=_tooltip_opt("散点图"),
             xaxis_opts=_xaxis_opt(),
+            yaxis_opts=_yaxis_opt(),
+            legend_opts=_legend_opt(),
         )
     )
 
 
 def _radar(words, freqs, top20):
+    schema = [
+        opts.RadarIndicatorItem(name=w, max_=max(freqs))
+        for w in words
+    ]
     return (
         Radar(init_opts=opts.InitOpts(bg_color=_C_BG))
-        .add_schema([opts.RadarIndicatorItem(name=w, max_=max(freqs)) for w in words])
+        .add_schema(
+            schema,
+            axislabel_opt=opts.LabelOpts(color=_C_SUB),
+            splitline_opt=opts.SplitLineOpts(
+                linestyle_opts=opts.LineStyleOpts(color="#2a2c31"),
+            ),
+        )
         .add("词频", [freqs])
-        .set_global_opts(title_opts=_title_opt("词频雷达图"))
+        .set_global_opts(
+            title_opts=_title_opt("词频雷达图"),
+            legend_opts=_legend_opt(),
+        )
     )
 
 
@@ -147,6 +201,7 @@ def _treemap(words, freqs, top20):
         .add(
             "",
             [{"name": w, "value": f} for w, f in top20],
+            label_opts=opts.LabelOpts(color=_C_LEGEND, font_size=12),
             levels=[
                 opts.TreeMapLevelsOpts(
                     treemap_itemstyle_opts=opts.TreeMapItemStyleOpts(
@@ -167,7 +222,10 @@ def _boxplot(words, freqs, top20):
         Boxplot(init_opts=opts.InitOpts(bg_color=_C_BG))
         .add_xaxis(["词频"])
         .add_yaxis("", [freqs])
-        .set_global_opts(title_opts=_title_opt("词频分布箱线图"))
+        .set_global_opts(
+            title_opts=_title_opt("词频分布箱线图"),
+            yaxis_opts=_yaxis_opt(),
+        )
     )
 
 
@@ -206,7 +264,7 @@ def create_cooccurrence_graph(counter: Counter[str]) -> Graph:
             is_draggable=True,
             is_rotate_label=True,
             linestyle_opts=opts.LineStyleOpts(color="#3a3d42", width=1),
-            label_opts=opts.LabelOpts(color=_C_TEXT, font_size=10),
+            label_opts=opts.LabelOpts(color=_C_LEGEND, font_size=11),
         )
         .set_global_opts(
             title_opts=opts.TitleOpts(
