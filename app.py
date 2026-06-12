@@ -627,11 +627,19 @@ if st.session_state.analyzed and st.session_state.counter:
             with st.expander("查看两篇原文"):
                 x1, x2 = st.columns(2)
                 with x1:
-                    st.markdown(f"**A：**{st.session_state.page_title}")
+                    st.markdown(
+                        f'<b style="color:#7a7e87;">A：</b>'
+                        f'<span style="color:#ced0d6;">{st.session_state.page_title}</span>',
+                        unsafe_allow_html=True,
+                    )
                     st.text_area("A", value=st.session_state.text[:1500], height=280,
                                  disabled=True, label_visibility="collapsed")
                 with x2:
-                    st.markdown(f"**B：**{st.session_state.title_b}")
+                    st.markdown(
+                        f'<b style="color:#7a7e87;">B：</b>'
+                        f'<span style="color:#ced0d6;">{st.session_state.title_b}</span>',
+                        unsafe_allow_html=True,
+                    )
                     st.text_area("B", value=st.session_state.text_b[:1500], height=280,
                                  disabled=True, label_visibility="collapsed")
 
@@ -653,12 +661,20 @@ if st.session_state.analyzed and st.session_state.counter:
 
                 with st.expander(f"{rec['title'][:50]}  —  {rec['created_at']}"):
                     st.markdown(
-                        f"**URL：**<{rec['url']}>  |  "
-                        f"**总词数：**{rec['total_words']}  |  "
-                        f"**唯一词：**{rec['unique_words']}"
+                        f'<span style="color:#7a7e87;">URL：</span>'
+                        f'<a href="{rec["url"]}" target="_blank" '
+                        f'style="color:#6B8EFF;text-decoration:none;">'
+                        f'{rec["url"][:60]}</a>'
+                        f' &nbsp;|&nbsp; <b>总词数：</b>{rec["total_words"]}'
+                        f' &nbsp;|&nbsp; <b>唯一词：</b>{rec["unique_words"]}',
+                        unsafe_allow_html=True,
                     )
                     if top_words_str:
-                        st.markdown(f"**高频词：**{top_words_str}")
+                        st.markdown(
+                            f'<b style="color:#7a7e87;">高频词：</b>'
+                            f'<span style="color:#a8adbd;">{top_words_str}</span>',
+                            unsafe_allow_html=True,
+                        )
                     if st.button("删除此记录", key=f"del_{rec['id']}"):
                         try:
                             remove_history(rec["id"])
