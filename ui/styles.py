@@ -53,12 +53,48 @@ h4 { font-size: 0.88rem; font-weight: 600; color: #9b9da4; }
 
 .stDownloadButton > button {
     background: #2b2d30 !important;
-    color: #ced0d6 !important;
+    color: #a8adbd !important;
     border: 1px solid #393b40 !important;
     border-radius: 4px !important;
-    padding: 6px 14px !important;
+    padding: 7px 14px !important;
     font-size: 0.8rem !important;
+    font-weight: 500 !important;
     transition: all .15s !important;
+}
+.stDownloadButton > button:hover {
+    border-color: #3574f0 !important;
+    color: #ced0d6 !important;
+    background: #32353a !important;
+}
+
+/* 侧边栏分组标题 */
+.sb-section {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #7a7e87;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin: 16px 0 4px;
+}
+.sb-section:first-of-type { margin-top: 4px; }
+
+/* 侧边栏内所有按钮统一风格 */
+[data-testid="stSidebar"] .stButton > button,
+[data-testid="stSidebar"] .stDownloadButton > button {
+    background: #2b2d30 !important;
+    color: #a8adbd !important;
+    border: 1px solid #393b40 !important;
+    border-radius: 4px !important;
+    padding: 7px 14px !important;
+    font-size: 0.8rem !important;
+    font-weight: 500 !important;
+    transition: all .15s !important;
+}
+[data-testid="stSidebar"] .stButton > button:hover,
+[data-testid="stSidebar"] .stDownloadButton > button:hover {
+    border-color: #3574f0 !important;
+    color: #ced0d6 !important;
+    background: #32353a !important;
 }
 
 .metric-card {
