@@ -30,7 +30,7 @@ st.set_page_config(
 )
 
 # ================================================================
-#  CSS — JetBrains New UI 风格
+#  CSS 
 # ================================================================
 st.markdown("""
 <style>
@@ -143,6 +143,18 @@ h4 { font-size: 0.88rem; font-weight: 600; color: #9b9da4; }
 .empty-state { text-align: center; padding: 60px 20px; }
 .empty-state .et { font-size: 0.95rem; color: #7a7e87; margin-bottom: 4px; }
 .empty-state .ed { font-size: 0.8rem; color: #5a5e66; }
+
+/* 欢迎页 */
+.welcome-title { font-size: 1.6rem; font-weight: 700; color: #ced0d6; margin-bottom: 6px; }
+.welcome-desc { font-size: 0.86rem; color: #7a7e87; margin-bottom: 32px; line-height: 1.7; }
+.feat-card { background: #2b2d30; border: 1px solid #393b40; border-radius: 4px; padding: 16px 18px; height: 100%; }
+.feat-card .fc-title { font-size: 0.82rem; font-weight: 600; color: #a8adbd; margin-bottom: 4px; }
+.feat-card .fc-desc { font-size: 0.76rem; color: #7a7e87; line-height: 1.6; }
+.flow-box { background: #2b2d30; border: 1px solid #393b40; border-radius: 4px; padding: 20px 24px; margin-top: 8px; }
+.flow-box .fl-title { font-size: 0.82rem; font-weight: 600; color: #a8adbd; margin-bottom: 14px; }
+.flow-box .fl-step-num { font-size: 1rem; font-weight: 700; color: #3574f0; margin-bottom: 2px; }
+.flow-box .fl-step-label { font-size: 0.8rem; color: #a8adbd; margin-bottom: 2px; }
+.flow-box .fl-step-desc { font-size: 0.72rem; color: #7a7e87; }
 
 /* ---- 标签页（radio 驱动，隐藏圆点 + 下划线风格） ---- */
 div[data-testid="stRadio"] > div[role="radiogroup"] {
@@ -316,9 +328,13 @@ with st.sidebar:
                 st.session_state.html_report_ready = False
                 st.rerun()
 
+    if st.button("重置会话", key="reset_btn", use_container_width=True):
+        for k in list(st.session_state.keys()):
+            del st.session_state[k]
+        st.rerun()
+
     st.markdown("""
-    <div style="margin-top:20px;padding:10px 0;border-top:1px solid #393b40;
-    font-size:0.68rem;color:#5a5e66;line-height:1.7;">
+    <div style="padding:8px 0;font-size:0.68rem;color:#5a5e66;line-height:1.7;">
     <p>1. 输入网页 URL<br>2. 点击「开始分析」<br>3. 切换标签页查看不同维度</p>
     </div>
     """, unsafe_allow_html=True)
@@ -691,9 +707,51 @@ if st.session_state.analyzed and st.session_state.counter:
             """, unsafe_allow_html=True)
 
 else:
-    st.markdown("""
-    <div class="empty-state">
-        <p class="et">在上方输入网页 URL，点击「开始分析」即可开始</p>
-        <p class="ed">支持中文网页的分词、关键词提取、多维图表与对比分析</p>
-    </div>
-    """, unsafe_allow_html=True)
+        st.markdown(
+            '<div class="welcome-desc" style="margin-top:8px;">'
+            '输入任意中文网页 URL，自动完成抓取、分词、统计分析及多维可视化。'
+            '适合内容运营者分析竞品文章，也适合研究者快速了解文本特征。</div>',
+            unsafe_allow_html=True,
+        )
+
+        # 功能卡片 2x2
+        cards = [
+            ("数据抓取与解析", "自动请求网页、检测编码、提取正文与 HTML 表格，支持反爬回退策略。"),
+            ("中文分词与统计", "jieba 分词 + TF-IDF / TextRank 关键词提取，词性标注、命名实体识别、N-gram 短语发现。"),
+            ("多维图表可视化", "词云、柱状图、饼图、雷达图、树图等 9 种图表，词共现网络图、双 URL 对比图。"),
+            ("报告导出与历史", "一键导出 CSV / HTML 分析报告，分析记录自动保存至本地，随时回看。"),
+        ]
+        for row in (cards[:2], cards[2:]):
+            cols = st.columns(2, gap="medium")
+            for i, (title, desc) in enumerate(row):
+                with cols[i]:
+                    st.markdown(
+                        f'<div class="feat-card">'
+                        f'<div class="fc-title">{title}</div>'
+                        f'<div class="fc-desc">{desc}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+            st.markdown("")
+
+        # 使用流程
+        flow = (
+            '<div class="flow-box">'
+            '<div class="fl-title">使用流程</div>'
+            '<div style="display:flex;gap:16px;">'
+        )
+        for num, t, d in [
+            ("01", "输入 URL", "粘贴中文网页链接"),
+            ("02", "点击分析", "自动抓取与分词"),
+            ("03", "切换标签页", "多维度浏览结果"),
+            ("04", "导出报告", "CSV / HTML 离线报告"),
+        ]:
+            flow += (
+                f'<div style="flex:1;">'
+                f'<div class="fl-step-num">{num}</div>'
+                f'<div class="fl-step-label">{t}</div>'
+                f'<div class="fl-step-desc">{d}</div>'
+                f'</div>'
+            )
+        flow += '</div></div>'
+        st.markdown(flow, unsafe_allow_html=True)
